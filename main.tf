@@ -123,4 +123,56 @@ resource "aws_instance" "elk_server" {
   }
 }
 
-#
+# Security Group - Least Privilege
+
+resource "aws_security_group" "elk_sg" {
+  name = "elk-sg"
+  description = "Security group for ELK stack"
+  vpc_id = var.vpc_id
+
+  # Allow SSH/Kibana only from Admin IP (Replace with your IP/VPN)
+  ingress {
+    from_port = 22
+    to_port = 22
+    protocol = "tcp"
+    cidr_blocks = [var.admin_ip]
+  }
+
+  egress {
+    from_port = 0
+    to_port = 0
+    protocol = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# IAM Role for EC2 (Session Manager support - No SSH keys needed)
+resource "aws_iam_role" "elk_role" {
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = { Service = "ec2.amazonaws.com"}
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ssm_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+  role       = aws_iam_role.elk_role.name
+}
+resource "aws_iam_instance_profile" "elk_profile" {
+  name = "elk_profile"
+  role = aws_iam_role.elk_role.name
+}
+
+# Data source for Ubuntu AMI
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners = ["099720109477"] # Canonical
+  filter {
+    name = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+}
