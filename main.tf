@@ -8,9 +8,50 @@ terraform {
 }
 
 provider "aws" {
-  region = "var.aws_region"
+  region = var.aws_region
 }
 
+# NETWORKING (VPC + Subnet + IGW + Route Table)
+
+resource "aws_vpc" "main" {
+  cidr_block = "10.0.0.0/16"
+  tags = {
+    Name = "elk_vpc"
+  }
+}
+
+resource "aws_subnet" "main" {
+  vpc_id = aws_vpc.main.id
+  cidr_block = "10.0.1.0/24"
+  map_public_ip_on_launch = true #Give EC2 a public IP
+  availability_zone = "${var.aws_region}a"
+  tags = {
+    Name = "elk_subnet"
+  }
+}
+
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
+  tags = {
+    Name = "elk_igw"
+  }
+}
+
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main.id
+  }
+  tags = {
+    Name = "elk_public_rt"
+  }
+}
+
+resource "aws_route_table_association" "public" {
+  subnet_id = aws_subnet.main.id
+  route_table_id = aws_route_table.public.id
+}
 # Secure S3 Bucket (Origin)
 
 resource "aws_s3_bucket" "origin" {
@@ -59,7 +100,7 @@ resource "aws_cloudfront_distribution" "cdn" {
         forward = "none"
       }
     }
-    viewer_protocol_policy = "redirect_to_https"
+    viewer_protocol_policy = "redirect-to-https"
     min_ttl                = 0
     default_ttl            = 3600
     max_ttl                = 86400
@@ -108,9 +149,9 @@ data "aws_iam_policy_document" "allow_cloudfront_oac" {
 
 # ELK Stack on EC2 (Installed via User Data)
 resource "aws_instance" "elk_server" {
-  ami           = data.awd_ami.ubuntu.id
+  ami           = data.aws_ami.ubuntu.id
   instance_type = "t3.medium" #Minimum for ELK
-  subnet_id = var.subnet.id
+  subnet_id = aws_subnet.main.id
 
   iam_instance_profile = aws_iam_instance_profile.elk_profile.name
   vpc_security_group_ids = [aws_security_group.elk_sg.id]
@@ -128,7 +169,7 @@ resource "aws_instance" "elk_server" {
 resource "aws_security_group" "elk_sg" {
   name = "elk-sg"
   description = "Security group for ELK stack"
-  vpc_id = var.vpc_id
+  vpc_id = aws_vpc.main.id
 
   # Allow SSH/Kibana only from Admin IP (Replace with your IP/VPN)
   ingress {
