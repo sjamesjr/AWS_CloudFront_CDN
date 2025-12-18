@@ -65,7 +65,7 @@ resource "aws_route_table_association" "public" {
 # ------------------------------------------------------------------------------
 
 resource "aws_s3_bucket" "origin" {
-  bucket_prefix = "my_cdn_origin"
+  bucket_prefix = "my-cdn-origin"
   force_destroy = true
 }
 
